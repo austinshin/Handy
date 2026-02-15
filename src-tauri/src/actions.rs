@@ -29,6 +29,76 @@ pub trait ShortcutAction: Send + Sync {
 // Transcribe Action
 struct TranscribeAction {
     post_process: bool,
+    log_to_obsidian: bool,
+}
+
+fn write_obsidian_entry(base_dir_str: &str, text: &str) -> Result<(), String> {
+    // Only attempt on Windows for the provided path
+    if !cfg!(target_os = "windows") {
+        return Ok(());
+    }
+
+    use chrono::Local;
+    use std::fs::{self, File, OpenOptions};
+    use std::io::Write;
+    use std::path::PathBuf;
+
+    let base_dir = PathBuf::from(base_dir_str);
+
+    // Ensure directory exists
+    if let Err(e) = fs::create_dir_all(&base_dir) {
+        return Err(format!("Failed to create transcripts directory: {}", e));
+    }
+
+    // Build today's filename YYYY-MM-DD.md
+    let now = Local::now();
+    let date_str = now.format("%Y-%m-%d").to_string();
+    let file_path = base_dir.join(format!("{}.md", date_str));
+
+    let mut needs_header = false;
+    if !file_path.exists() {
+        needs_header = true;
+        // Create the file initially
+        if let Err(e) = File::create(&file_path) {
+            return Err(format!("Failed to create daily transcript file: {}", e));
+        }
+    }
+
+    // Prepare entry line with timestamp
+    let time_str = now.format("%H:%M").to_string();
+    let entry = format!("- [{}] {}\n", time_str, text);
+
+    // Optionally add a title header if new file
+    let mut prefix = String::new();
+    if needs_header {
+        prefix = format!("# {}\n\n", date_str);
+    }
+
+    let mut file = OpenOptions::new()
+        .create(true)
+        .append(true)
+        .open(&file_path)
+        .map_err(|e| format!("Failed to open transcript file for append: {}", e))?;
+
+    // If the file exists but is empty, add header once
+    if !needs_header {
+        if let Ok(metadata) = file.metadata() {
+            if metadata.len() == 0 {
+                prefix = format!("# {}\n\n", date_str);
+            }
+        }
+    }
+
+    if !prefix.is_empty() {
+        file
+            .write_all(prefix.as_bytes())
+            .map_err(|e| format!("Failed to write header: {}", e))?;
+    }
+    file
+        .write_all(entry.as_bytes())
+        .map_err(|e| format!("Failed to write entry: {}", e))?;
+
+    Ok(())
 }
 
 async fn post_process_transcription(settings: &AppSettings, transcription: &str) -> Option<String> {
@@ -304,6 +374,7 @@ impl ShortcutAction for TranscribeAction {
         let binding_id = binding_id.to_string(); // Clone binding_id for the async task
         let post_process = self.post_process;
 
+        let log_to_obsidian = self.log_to_obsidian;
         tauri::async_runtime::spawn(async move {
             let binding_id = binding_id.clone(); // Clone for the inner async task
             debug!(
@@ -390,8 +461,9 @@ impl ShortcutAction for TranscribeAction {
                             // Paste the final text (either processed or original)
                             let ah_clone = ah.clone();
                             let paste_time = Instant::now();
+                            let final_for_paste = final_text.clone();
                             ah.run_on_main_thread(move || {
-                                match utils::paste(final_text, ah_clone.clone()) {
+                                match utils::paste(final_for_paste, ah_clone.clone()) {
                                     Ok(()) => debug!(
                                         "Text pasted successfully in {:?}",
                                         paste_time.elapsed()
@@ -407,6 +479,25 @@ impl ShortcutAction for TranscribeAction {
                                 utils::hide_recording_overlay(&ah);
                                 change_tray_icon(&ah, TrayIconState::Idle);
                             });
+
+                            // Additionally, write to Obsidian transcripts if enabled
+                            if log_to_obsidian {
+                                let text_to_log = final_text.clone();
+                                let settings_now = get_settings(&ah);
+                                let chosen_dir = settings_now
+                                    .obsidian_transcripts_path
+                                    .clone()
+                                    .filter(|s| !s.trim().is_empty())
+                                    .unwrap_or_else(|| {
+                                        // Fallback to user's provided path
+                                        String::from(r"C:\\Users\\link\\Documents\\link-brain\\transcripts")
+                                    });
+                                tauri::async_runtime::spawn(async move {
+                                    if let Err(e) = write_obsidian_entry(&chosen_dir, &text_to_log) {
+                                        error!("Failed to write Obsidian transcript entry: {}", e);
+                                    }
+                                });
+                            }
                         } else {
                             utils::hide_recording_overlay(&ah);
                             change_tray_icon(&ah, TrayIconState::Idle);
@@ -480,11 +571,16 @@ pub static ACTION_MAP: Lazy<HashMap<String, Arc<dyn ShortcutAction>>> = Lazy::ne
         "transcribe".to_string(),
         Arc::new(TranscribeAction {
             post_process: false,
+            log_to_obsidian: false,
         }) as Arc<dyn ShortcutAction>,
     );
     map.insert(
         "transcribe_with_post_process".to_string(),
-        Arc::new(TranscribeAction { post_process: true }) as Arc<dyn ShortcutAction>,
+        Arc::new(TranscribeAction { post_process: true, log_to_obsidian: false }) as Arc<dyn ShortcutAction>,
+    );
+    map.insert(
+        "transcribe_to_obsidian".to_string(),
+        Arc::new(TranscribeAction { post_process: false, log_to_obsidian: true }) as Arc<dyn ShortcutAction>,
     );
     map.insert(
         "cancel".to_string(),

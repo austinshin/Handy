@@ -234,6 +234,27 @@ pub fn resume_binding(app: AppHandle, id: String) -> Result<(), String> {
 }
 
 // ============================================================================
+// Obsidian transcripts path setting
+// ============================================================================
+
+#[tauri::command]
+#[specta::specta]
+pub fn change_obsidian_transcripts_path_setting(
+    app: AppHandle,
+    path: String,
+) -> Result<(), String> {
+    let mut s = settings::get_settings(&app);
+    let trimmed = path.trim().to_string();
+    if trimmed.is_empty() {
+        s.obsidian_transcripts_path = None;
+    } else {
+        s.obsidian_transcripts_path = Some(trimmed);
+    }
+    settings::write_settings(&app, s);
+    Ok(())
+}
+
+// ============================================================================
 // Keyboard Implementation Switching
 // ============================================================================
 

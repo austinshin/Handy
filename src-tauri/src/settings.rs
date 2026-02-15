@@ -276,6 +276,8 @@ impl Default for TypingTool {
 #[derive(Serialize, Deserialize, Debug, Clone, Type)]
 pub struct AppSettings {
     pub bindings: HashMap<String, ShortcutBinding>,
+    #[serde(default)]
+    pub obsidian_transcripts_path: Option<String>,
     pub push_to_talk: bool,
     pub audio_feedback: bool,
     #[serde(default = "default_audio_feedback_volume")]
@@ -644,8 +646,28 @@ pub fn get_default_settings() -> AppSettings {
         },
     );
 
+    // Additional hotkey to transcribe and log into Obsidian transcripts
+    #[cfg(target_os = "windows")]
+    let default_obsidian_shortcut = "ctrl+alt+space";
+    #[cfg(not(target_os = "windows"))]
+    let default_obsidian_shortcut = "ctrl+alt+space";
+
+    bindings.insert(
+        "transcribe_to_obsidian".to_string(),
+        ShortcutBinding {
+            id: "transcribe_to_obsidian".to_string(),
+            name: "Transcribe to Obsidian".to_string(),
+            description:
+                "Transcribe and append the result to Obsidian transcripts (and paste)."
+                    .to_string(),
+            default_binding: default_obsidian_shortcut.to_string(),
+            current_binding: default_obsidian_shortcut.to_string(),
+        },
+    );
+
     AppSettings {
         bindings,
+        obsidian_transcripts_path: None,
         push_to_talk: true,
         audio_feedback: false,
         audio_feedback_volume: default_audio_feedback_volume(),

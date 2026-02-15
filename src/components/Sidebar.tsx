@@ -1,11 +1,12 @@
 import React from "react";
 import { useTranslation } from "react-i18next";
-import { Cog, FlaskConical, History, Info, Sparkles, Cpu } from "lucide-react";
+import { Cog, FlaskConical, History, Info, Sparkles, Cpu, Keyboard } from "lucide-react";
 import HandyTextLogo from "./icons/HandyTextLogo";
 import HandyHand from "./icons/HandyHand";
 import { useSettings } from "../hooks/useSettings";
 import {
   GeneralSettings,
+  HotkeysSettings,
   AdvancedSettings,
   HistorySettings,
   DebugSettings,
@@ -36,6 +37,12 @@ export const SECTIONS_CONFIG = {
     labelKey: "sidebar.general",
     icon: HandyHand,
     component: GeneralSettings,
+    enabled: () => true,
+  },
+  hotkeys: {
+    labelKey: "sidebar.hotkeys",
+    icon: Keyboard,
+    component: HotkeysSettings,
     enabled: () => true,
   },
   models: {
@@ -103,11 +110,10 @@ export const Sidebar: React.FC<SidebarProps> = ({
           return (
             <div
               key={section.id}
-              className={`flex gap-2 items-center p-2 w-full rounded-lg cursor-pointer transition-colors ${
-                isActive
+              className={`flex gap-2 items-center p-2 w-full rounded-lg cursor-pointer transition-colors ${isActive
                   ? "bg-logo-primary/80"
                   : "hover:bg-mid-gray/20 hover:opacity-100 opacity-85"
-              }`}
+                }`}
               onClick={() => onSectionChange(section.id)}
             >
               <Icon width={24} height={24} className="shrink-0" />

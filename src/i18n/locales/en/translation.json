@@ -9,6 +9,7 @@
   },
   "sidebar": {
     "general": "General",
+    "hotkeys": "Hotkeys",
     "models": "Models",
     "advanced": "Advanced",
     "postProcessing": "Post Process",
@@ -137,6 +138,10 @@
           "transcribe_with_post_process": {
             "name": "Post-Processing Hotkey",
             "description": "Optional: A dedicated hotkey that always applies AI post-processing to your transcription."
+          },
+          "transcribe_to_obsidian": {
+            "name": "Transcribe to Obsidian",
+            "description": "Transcribes your speech and appends it to your Obsidian transcripts file for today."
           }
         },
         "errors": {
@@ -156,6 +161,17 @@
       "pushToTalk": {
         "label": "Push To Talk",
         "description": "Hold to record, release to stop"
+      }
+    },
+    "hotkeys": {
+      "title": "Hotkeys",
+      "obsidian": {
+        "title": "Obsidian Transcripts",
+        "path": {
+          "title": "Transcripts Folder",
+          "description": "Choose the folder in your Obsidian vault where Handy should append daily transcripts (YYYY-MM-DD.md). Leave empty to use the default.",
+          "placeholder": "C:\\Users\\you\\Vault\\transcripts"
+        }
       }
     },
     "models": {

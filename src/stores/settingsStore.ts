@@ -70,6 +70,8 @@ const DEFAULT_AUDIO_DEVICE: AudioDevice = {
 const settingUpdaters: {
   [K in keyof Settings]?: (value: Settings[K]) => Promise<unknown>;
 } = {
+  obsidian_transcripts_path: (value) =>
+    commands.changeObsidianTranscriptsPathSetting((value as string) ?? ""),
   always_on_microphone: (value) =>
     commands.updateMicrophoneMode(value as boolean),
   audio_feedback: (value) =>
@@ -303,15 +305,15 @@ export const useSettingsStore = create<SettingsStore>()(
         set((state) => ({
           settings: state.settings
             ? {
-                ...state.settings,
-                bindings: {
-                  ...state.settings.bindings,
-                  [id]: {
-                    ...state.settings.bindings[id]!,
-                    current_binding: binding,
-                  },
+              ...state.settings,
+              bindings: {
+                ...state.settings.bindings,
+                [id]: {
+                  ...state.settings.bindings[id]!,
+                  current_binding: binding,
                 },
-              }
+              },
+            }
             : null,
         }));
 
@@ -334,15 +336,15 @@ export const useSettingsStore = create<SettingsStore>()(
           set((state) => ({
             settings: state.settings
               ? {
-                  ...state.settings,
-                  bindings: {
-                    ...state.settings.bindings,
-                    [id]: {
-                      ...state.settings.bindings[id]!,
-                      current_binding: originalBinding,
-                    },
+                ...state.settings,
+                bindings: {
+                  ...state.settings.bindings,
+                  [id]: {
+                    ...state.settings.bindings[id]!,
+                    current_binding: originalBinding,
                   },
-                }
+                },
+              }
               : null,
           }));
         }

@@ -293,6 +293,7 @@ pub fn run() {
         shortcut::update_custom_words,
         shortcut::suspend_binding,
         shortcut::resume_binding,
+        shortcut::change_obsidian_transcripts_path_setting,
         shortcut::change_mute_while_recording_setting,
         shortcut::change_append_trailing_space_setting,
         shortcut::change_app_language_setting,
