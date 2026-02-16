@@ -421,6 +421,37 @@ impl AudioRecordingManager {
         )
     }
 
+    /// Returns a recent snapshot of the current recording buffer (tail only).
+    pub fn get_recording_snapshot(&self, tail_seconds: usize) -> Option<Vec<f32>> {
+        if !self.is_recording() {
+            return None;
+        }
+
+        let samples = if let Some(rec) = self.recorder.lock().unwrap().as_ref() {
+            match rec.snapshot() {
+                Ok(buf) => buf,
+                Err(e) => {
+                    error!("snapshot() failed: {e}");
+                    Vec::new()
+                }
+            }
+        } else {
+            error!("Recorder not available");
+            Vec::new()
+        };
+
+        if samples.is_empty() {
+            return None;
+        }
+
+        let max_samples = WHISPER_SAMPLE_RATE.saturating_mul(tail_seconds);
+        if samples.len() > max_samples && max_samples > 0 {
+            Some(samples[samples.len() - max_samples..].to_vec())
+        } else {
+            Some(samples)
+        }
+    }
+
     /// Cancel any ongoing recording without returning audio samples
     pub fn cancel_recording(&self) {
         let mut state = self.state.lock().unwrap();

@@ -4,7 +4,9 @@ use crate::audio_feedback::{play_feedback_sound, play_feedback_sound_blocking, S
 use crate::managers::audio::AudioRecordingManager;
 use crate::managers::history::HistoryManager;
 use crate::managers::transcription::TranscriptionManager;
-use crate::settings::{get_settings, AppSettings, APPLE_INTELLIGENCE_PROVIDER_ID};
+use crate::settings::{
+    get_settings, AppSettings, ModelUnloadTimeout, APPLE_INTELLIGENCE_PROVIDER_ID,
+};
 use crate::shortcut;
 use crate::tray::{change_tray_icon, TrayIconState};
 use crate::utils::{
@@ -15,8 +17,9 @@ use ferrous_opencc::{config::BuiltinConfig, OpenCC};
 use log::{debug, error};
 use once_cell::sync::Lazy;
 use std::collections::HashMap;
+use std::path::PathBuf;
 use std::sync::Arc;
-use std::time::Instant;
+use std::time::{Duration, Instant};
 use tauri::AppHandle;
 use tauri::Manager;
 
@@ -32,16 +35,131 @@ struct TranscribeAction {
     log_to_obsidian: bool,
 }
 
-fn write_obsidian_entry(base_dir_str: &str, text: &str) -> Result<(), String> {
-    // Only attempt on Windows for the provided path
-    if !cfg!(target_os = "windows") {
-        return Ok(());
+fn spawn_live_preview_loop(
+    app: &AppHandle,
+    rm: Arc<AudioRecordingManager>,
+    tm: Arc<TranscriptionManager>,
+) {
+    let settings = get_settings(app);
+    if !settings.live_preview_enabled {
+        debug!("Live preview loop disabled by settings");
+        return;
+    }
+    if settings.model_unload_timeout == ModelUnloadTimeout::Immediately {
+        debug!("Skipping live preview loop because model unload timeout is set to immediate");
+        return;
     }
 
+    let low_frequency = settings.live_preview_low_frequency;
+    let app_handle = app.clone();
+    std::thread::spawn(move || {
+        let poll_interval = if low_frequency {
+            Duration::from_millis(2600)
+        } else {
+            Duration::from_millis(1400)
+        };
+        let snapshot_seconds = if low_frequency { 9 } else { 7 };
+        let min_samples = if low_frequency { 22_000 } else { 18_000 };
+        const MAX_PREVIEW_CHARS: usize = 2400;
+
+        let mut merged_preview = String::new();
+        let mut last_preview = String::new();
+
+        loop {
+            std::thread::sleep(poll_interval);
+
+            if !rm.is_recording() {
+                break;
+            }
+
+            let Some(samples) = rm.get_recording_snapshot(snapshot_seconds) else {
+                continue;
+            };
+
+            if samples.len() < min_samples {
+                continue;
+            }
+
+            match tm.transcribe(samples) {
+                Ok(text) => {
+                    let normalized = normalize_preview_text(&text);
+                    if normalized.is_empty() || normalized == last_preview {
+                        continue;
+                    }
+                    last_preview = normalized.clone();
+                    merged_preview = merge_preview_text(&merged_preview, &normalized);
+
+                    if merged_preview.len() > MAX_PREVIEW_CHARS {
+                        let keep_from = merged_preview
+                            .char_indices()
+                            .rev()
+                            .nth(MAX_PREVIEW_CHARS)
+                            .map(|(idx, _)| idx)
+                            .unwrap_or(0);
+                        merged_preview = merged_preview[keep_from..].trim_start().to_string();
+                    }
+
+                    utils::emit_transcription_preview(&app_handle, &merged_preview);
+                }
+                Err(e) => {
+                    debug!("Live preview transcription skipped: {}", e);
+                }
+            }
+        }
+    });
+}
+
+fn normalize_preview_text(text: &str) -> String {
+    text.split_whitespace().collect::<Vec<_>>().join(" ")
+}
+
+fn merge_preview_text(existing: &str, incoming: &str) -> String {
+    if existing.is_empty() {
+        return incoming.to_string();
+    }
+    if incoming.is_empty() {
+        return existing.to_string();
+    }
+    if existing == incoming || existing.ends_with(incoming) {
+        return existing.to_string();
+    }
+    if incoming.starts_with(existing) {
+        return incoming.to_string();
+    }
+
+    let existing_words: Vec<&str> = existing.split_whitespace().collect();
+    let incoming_words: Vec<&str> = incoming.split_whitespace().collect();
+    if existing_words.is_empty() {
+        return incoming.to_string();
+    }
+    if incoming_words.is_empty() {
+        return existing.to_string();
+    }
+
+    let max_overlap = existing_words.len().min(incoming_words.len()).min(24);
+    let overlap = (1..=max_overlap)
+        .rev()
+        .find(|&k| existing_words[existing_words.len() - k..] == incoming_words[..k])
+        .unwrap_or(0);
+
+    if overlap == 0 {
+        format!("{existing} {incoming}")
+    } else if overlap == incoming_words.len() {
+        existing.to_string()
+    } else {
+        let suffix = incoming_words[overlap..].join(" ");
+        if suffix.is_empty() {
+            existing.to_string()
+        } else {
+            format!("{existing} {suffix}")
+        }
+    }
+}
+
+fn write_obsidian_entry(base_dir_str: &str, text: &str) -> Result<(), String> {
     use chrono::Local;
     use std::fs::{self, File, OpenOptions};
     use std::io::Write;
-    use std::path::PathBuf;
 
     let base_dir = PathBuf::from(base_dir_str);
 
@@ -99,6 +217,15 @@ fn write_obsidian_entry(base_dir_str: &str, text: &str) -> Result<(), String> {
         .map_err(|e| format!("Failed to write entry: {}", e))?;
 
     Ok(())
+}
+
+fn default_obsidian_transcripts_dir(app: &AppHandle) -> String {
+    app.path()
+        .home_dir()
+        .map(|home| home.join("Documents").join("Handy").join("transcripts"))
+        .unwrap_or_else(|_| PathBuf::from("transcripts"))
+        .to_string_lossy()
+        .to_string()
 }
 
 async fn post_process_transcription(settings: &AppSettings, transcription: &str) -> Option<String> {
@@ -292,6 +419,7 @@ impl ShortcutAction for TranscribeAction {
         let binding_id = binding_id.to_string();
         change_tray_icon(app, TrayIconState::Recording);
         show_recording_overlay(app);
+        utils::clear_transcription_preview(app);
 
         let rm = app.state::<Arc<AudioRecordingManager>>();
 
@@ -340,6 +468,7 @@ impl ShortcutAction for TranscribeAction {
         }
 
         if recording_started {
+            spawn_live_preview_loop(app, Arc::clone(&rm), Arc::clone(&tm));
             // Dynamically register the cancel shortcut in a separate task to avoid deadlock
             shortcut::register_cancel_shortcut(app);
         }
@@ -364,6 +493,7 @@ impl ShortcutAction for TranscribeAction {
 
         change_tray_icon(app, TrayIconState::Transcribing);
         show_transcribing_overlay(app);
+        utils::clear_transcription_preview(app);
 
         // Unmute before playing audio feedback so the stop sound is audible
         rm.remove_mute();
@@ -400,6 +530,7 @@ impl ShortcutAction for TranscribeAction {
                             transcription
                         );
                         if !transcription.is_empty() {
+                            utils::emit_transcription_preview(&ah, &transcription);
                             let settings = get_settings(&ah);
                             let mut final_text = transcription.clone();
                             let mut post_processed_text: Option<String> = None;
@@ -425,6 +556,7 @@ impl ShortcutAction for TranscribeAction {
                             if let Some(processed_text) = processed {
                                 post_processed_text = Some(processed_text.clone());
                                 final_text = processed_text;
+                                utils::emit_transcription_preview(&ah, &final_text);
 
                                 // Get the prompt that was used
                                 if let Some(prompt_id) = &settings.post_process_selected_prompt_id {
@@ -462,6 +594,8 @@ impl ShortcutAction for TranscribeAction {
                             let ah_clone = ah.clone();
                             let paste_time = Instant::now();
                             let final_for_paste = final_text.clone();
+                            // Keep the final transcript visible briefly before paste.
+                            std::thread::sleep(std::time::Duration::from_millis(900));
                             ah.run_on_main_thread(move || {
                                 match utils::paste(final_for_paste, ah_clone.clone()) {
                                     Ok(()) => debug!(
@@ -488,10 +622,7 @@ impl ShortcutAction for TranscribeAction {
                                     .obsidian_transcripts_path
                                     .clone()
                                     .filter(|s| !s.trim().is_empty())
-                                    .unwrap_or_else(|| {
-                                        // Fallback to user's provided path
-                                        String::from(r"C:\\Users\\link\\Documents\\link-brain\\transcripts")
-                                    });
+                                    .unwrap_or_else(|| default_obsidian_transcripts_dir(&ah));
                                 tauri::async_runtime::spawn(async move {
                                     if let Err(e) = write_obsidian_entry(&chosen_dir, &text_to_log) {
                                         error!("Failed to write Obsidian transcript entry: {}", e);

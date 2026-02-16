@@ -109,6 +109,10 @@ const settingUpdaters: {
     commands.changeSelectedLanguageSetting(value as string),
   overlay_position: (value) =>
     commands.changeOverlayPositionSetting(value as string),
+  live_preview_enabled: (value) =>
+    commands.changeLivePreviewEnabledSetting(value as boolean),
+  live_preview_low_frequency: (value) =>
+    commands.changeLivePreviewLowFrequencySetting(value as boolean),
   debug_mode: (value) => commands.changeDebugModeSetting(value as boolean),
   custom_words: (value) => commands.updateCustomWords(value as string[]),
   word_correction_threshold: (value) =>

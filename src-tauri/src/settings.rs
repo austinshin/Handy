@@ -306,6 +306,10 @@ pub struct AppSettings {
     pub selected_language: String,
     #[serde(default = "default_overlay_position")]
     pub overlay_position: OverlayPosition,
+    #[serde(default = "default_live_preview_enabled")]
+    pub live_preview_enabled: bool,
+    #[serde(default = "default_live_preview_low_frequency")]
+    pub live_preview_low_frequency: bool,
     #[serde(default = "default_debug_mode")]
     pub debug_mode: bool,
     #[serde(default = "default_log_level")]
@@ -396,6 +400,14 @@ fn default_overlay_position() -> OverlayPosition {
 }
 
 fn default_debug_mode() -> bool {
+    false
+}
+
+fn default_live_preview_enabled() -> bool {
+    true
+}
+
+fn default_live_preview_low_frequency() -> bool {
     false
 }
 
@@ -683,6 +695,8 @@ pub fn get_default_settings() -> AppSettings {
         translate_to_english: false,
         selected_language: "auto".to_string(),
         overlay_position: default_overlay_position(),
+        live_preview_enabled: default_live_preview_enabled(),
+        live_preview_low_frequency: default_live_preview_low_frequency(),
         debug_mode: false,
         log_level: default_log_level(),
         custom_words: Vec::new(),

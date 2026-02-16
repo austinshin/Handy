@@ -249,6 +249,14 @@
           "top": "Top"
         }
       },
+      "livePreviewEnabled": {
+        "label": "Live Transcription Preview",
+        "description": "Show a rolling preview while recording. Disable this to reduce CPU usage."
+      },
+      "livePreviewLowFrequency": {
+        "label": "Low Frequency Live Preview",
+        "description": "Update live preview less often to reduce CPU usage. Preview may feel less responsive."
+      },
       "pasteMethod": {
         "title": "Paste Method",
         "description": "Choose how text is inserted. Direct: simulates typing via system input. None: skips paste, only updates history/clipboard.",

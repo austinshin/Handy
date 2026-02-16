@@ -271,6 +271,8 @@ pub fn run() {
         shortcut::change_translate_to_english_setting,
         shortcut::change_selected_language_setting,
         shortcut::change_overlay_position_setting,
+        shortcut::change_live_preview_enabled_setting,
+        shortcut::change_live_preview_low_frequency_setting,
         shortcut::change_debug_mode_setting,
         shortcut::change_word_correction_threshold_setting,
         shortcut::change_paste_method_setting,
@@ -353,12 +355,12 @@ pub fn run() {
     ]);
 
     #[cfg(debug_assertions)] // <- Only export on non-release builds
-    specta_builder
-        .export(
-            Typescript::default().bigint(BigIntExportBehavior::Number),
-            "../src/bindings.ts",
-        )
-        .expect("Failed to export typescript bindings");
+    if let Err(err) = specta_builder.export(
+        Typescript::default().bigint(BigIntExportBehavior::Number),
+        "../src/bindings.ts",
+    ) {
+        eprintln!("Warning: failed to export typescript bindings: {}", err);
+    }
 
     let mut builder = tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
